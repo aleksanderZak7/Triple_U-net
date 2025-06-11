@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+
 from utils import *
 
 channels_ = [64,128,256,512]
@@ -12,17 +12,25 @@ RGB_output_channel = 1
 H_input_channels = 3
 H_output_channel = 1
 MID_output_channel = 1
+
+
 class unet_up_sample(nn.Module):
     def __init__(self, inplanes, planes):
         super(unet_up_sample, self).__init__()
         self.up     = up_sample(inplanes, planes)
-        self.cat    = my_conv(planes*2, planes,kernel_size=1, padding=0,bias=False)
-        self.block  = unet_block(planes,planes)
-    def forward(self, up,skip):
-        up  = self.up(up)
-        cat = self.cat(torch.cat((skip,up),1))
+        self.cat    = my_conv(planes * 2, planes, kernel_size=1, padding=0, bias=False)
+        self.block  = unet_block(planes, planes)
+
+    def forward(self, up, skip):
+        up = self.up(up)
+
+        if up.size()[2:] != skip.size()[2:]:
+            up = F.interpolate(up, size=skip.shape[2:], mode='bilinear', align_corners=True)
+
+        cat = self.cat(torch.cat((skip, up), dim=1))
         out = self.block(cat)
         return out
+
 
 class unet_block(nn.Module):
     def __init__(self,input_size,output_size):
@@ -55,6 +63,7 @@ class down_sample(nn.Module):
     def forward(self,x):
         return self.down_sample(x)
 
+
 class unet_down_branch(nn.Module):
 #The down sample branch of RGB branch and H branch
     def __init__(self,input_channels):
@@ -71,6 +80,7 @@ class unet_down_branch(nn.Module):
         
         self.unetdown4      = unet_block(channels_[2], channels_[3])
 
+
     def forward(self, x): 
         ret1 = self.unetdown1(x)
         
@@ -84,6 +94,7 @@ class unet_down_branch(nn.Module):
         ret4 = self.unetdown4(ret4)
 
         return [ret1,ret2,ret3,ret4]
+
 
 class unet_up_branch(nn.Module):
 #The up sample branch of RGB branch and H branch
@@ -105,6 +116,7 @@ class unet_up_branch(nn.Module):
         out = torch.sigmoid(self.out(ret3))
         return [ret1,ret2,ret3],out
 
+
 class my_conv(nn.Module):
     def __init__(self,inplanes, outplanes,kernel_size=3,stride=1,  padding=1,bias=False):
         super(my_conv, self).__init__()
@@ -114,6 +126,7 @@ class my_conv(nn.Module):
                         nn.ReLU(inplace=True))
     def forward(self,x):
         return self.my_conv(x)
+   
         
 class PDFA(nn.Module):
     def __init__(self,outplanes,fuse_num=4):
@@ -182,6 +195,7 @@ class segmentation_branch_down(nn.Module):
 
         return [ret1,ret2,ret3,ret4]
 
+
 class segmentation_branch_up(nn.Module):
 #segmentation branch for up sample of the Triple U-net
     def __init__(self,conf=None):
@@ -213,6 +227,7 @@ class segmentation_branch_up(nn.Module):
         output = torch.sigmoid(output)
         
         return output
+
 
 class net(nn.Module):
     def __init__(self,init=True):
