@@ -1,13 +1,11 @@
-import numpy as np 
-from torch.utils.data.dataset import Dataset
 import os
-import skimage
-import skimage.io as io
 import cv2
+import torch
+import skimage
+import numpy as np 
 from utils import *
 import torch.nn as nn
-import torch
-import skimage.color  as color
+from torch.utils.data.dataset import Dataset
 
 
 class trainGenerator(Dataset):
@@ -64,20 +62,25 @@ class trainGenerator(Dataset):
         imgFile = os.path.join(self.data_dir, img_id)
         img     = skimage.io.imread(imgFile)
         
-        HE      = separate_stain(img)[:,:,0]
-        HE      = skimage.color.gray2rgb(HE)
+        HE      = separate_stain(img)
+        HE = separate_stain(img)
+        
+        #HE      = skimage.color.gray2rgb(HE)
+        #print(f"data.py 71 -> HE shape: {HE.shape}") # data.py 71 -> HE shape: (64, 64, 3, 3) !!!!!!!!!!!
+        
         if no_transpose:
             return HE
         if norm:
-            return torch.FloatTensor(np.transpose(HE, (2,0,1))/255)
-        return torch.FloatTensor(np.transpose(HE, (2,0,1)))
+            output = torch.FloatTensor(np.transpose(HE, (2,0,1))/255)
+            return output
+        output = torch.FloatTensor(np.transpose(HE, (2,0,1))/255)
+        return output
         
     def __getitem__(self, item):
         img,file     = self.load_image(item,no_transpose=True)
         masks    = self.load_mask(item,no_tensor=True)
         edge    = self.load_edge(item,no_tensor=True)
         HE      = self.load_HE(item,no_transpose=True)
-        
 
         if self.transform is not None:
             return self.transform(img, masks,HE,edge)
@@ -119,11 +122,15 @@ def seg_loss(prediction,ground_truth):
     loss = nn.BCELoss()(prediction,ground_truth)
     return loss
 
-def	soft_dice(input, target):
+def soft_dice(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    
     smooth = 1e-5
-    dim=(1, 2)
+    
     input_flat = torch.squeeze(input.cpu())
     target_flat = torch.squeeze(target.cpu())
+    
+    dim=(1, 2) if len(input_flat.shape) == 3 else (0, 1)
+    
     intersection = input_flat * target_flat
     loss = 2. * (torch.sum(intersection,dim) + smooth) / (torch.sum(input_flat*input_flat,dim)\
                     + torch.sum(target_flat*target_flat,dim) + smooth)
