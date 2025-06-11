@@ -8,12 +8,13 @@ import numpy as np
 import skimage.io as io
 
 import model
+import Config
 import transform
 from utils import *
 
 
 class test_model(object):
-    def __init__(self, conf):
+    def __init__(self, conf: Config.config):
         super(test_model, self).__init__()
         self.conf = conf
         self.datagen = data.trainGenerator(conf.test_data_path, conf.label_path, conf.edg_path)
