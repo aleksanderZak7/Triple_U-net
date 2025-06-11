@@ -4,11 +4,84 @@ import csv
 import time
 import torch
 import random
+import metrics
+import skimage
 import numpy as np
 import skimage.morphology as sm
+from matplotlib import pyplot as plt
 
 SQUARE_KERNEL_KEYWORD = 'square_conv.weight'
 last_color = 31
+
+
+def create_optimizer(conf, model) -> torch.optim.AdamW:
+    optimizer_config = conf.optim_conf
+    learning_rate = optimizer_config['learning_rate']
+    weight_decay = optimizer_config['weight_decay']
+    betas = optimizer_config['betas']
+    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad,
+                                         model.parameters()), betas=betas,
+                                  lr=learning_rate, weight_decay=weight_decay)
+    return optimizer
+
+
+def create_lr_scheduler(conf, optimizer) -> torch.optim.lr_scheduler.ExponentialLR:
+    lr_scheduler = conf.lr_scheduler
+    gamma = lr_scheduler['gamma']
+    return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma, last_epoch=-1)
+
+
+def evaluation(pre, mask, cutoff, min_size=10) -> None:
+    IOU: list[float] = []
+    DICE: list[float] = []
+    AJI: list[float] = []
+    TP: list[float] = []
+    PQ: list[float] = []
+
+    for i in range(len(pre)):
+        img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
+        
+        PQ.append(metrics.get_fast_pq(np.array(mask[i], dtype='uint8'), np.array(img, dtype='uint8'))[0][2])
+
+        IOU.append(metrics.compute_iou(img, mask[i], cutoff))
+
+        # Dice -> compute_F1
+        DICE.append(metrics.compute_F1(img, mask[i], cutoff))
+
+        AJI.append(metrics.get_fast_aji(mask[i], img))
+
+        TP.append(metrics.compute_TP_ratio(img, mask[i], cutoff))
+
+    my_print('Num is:{} '.format(len(PQ)), 'cutoff=[{}]'.format(cutoff), 'PQ=[{:.6}]'.format(np.mean(PQ)), 'IOU=[{:.6}]'.format(np.mean(IOU)),
+             'DICE=[{:.6}]'.format(np.mean(DICE)), 'AJI=[{:.6}]'.format(np.mean(AJI)), 'TP=[{:.6}]'.format(np.mean(TP)))
+
+
+def dice_evaluation(pre, mask, cutoff, min_size=10) -> float:
+    DICE: list[float] = []
+    for i in range(len(pre)):
+        img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
+
+        # Dice -> compute_F1
+        DICE.append(metrics.compute_F1(img, mask[i], cutoff))
+
+    return float(np.mean(DICE))
+
+
+def history_plot(training_history: dict[str, list[float]]) -> None:
+    plt.figure(figsize=(12, 4))
+    metrics: tuple[str, str] = ("loss", "dice")
+
+    for idx, key in enumerate(metrics, start=1):
+        plt.subplot(1, 2, idx)
+        plt.plot(training_history[f"train_{key}"], label="Train")
+        plt.plot(training_history[f"val_{key}"], label="Validation")
+        plt.xlabel("Epochs")
+        plt.ylabel(key.capitalize())
+        plt.title(f"{key.capitalize()} History")
+        plt.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 
 def rtime_print(str, end='\r'):
@@ -25,7 +98,7 @@ def note_by_split(num, split):
 
 def get_filename(path, contain_dir=False, abspath=False, num_only=False, no_num=False):
     if not os.path.exists(path):
-        my_error('{} not exit!!!'.format(filename))
+        my_error('{} not exit!!!'.format(path))
         return []
     FileNames = os.listdir(path)
     ret = []
@@ -102,7 +175,7 @@ def separate_stain(im: np.ndarray) -> np.ndarray:
     if np.any(np.isnan(image_out)) or np.any(np.isinf(image_out)):
         raise ValueError("Invalid values in final HE image.")
 
-    return np.uint8(image_out)
+    return np.uint8(image_out) # type: ignore
 
 
 def com_str(str, rc=True, sep=' ', last=False):
@@ -175,7 +248,7 @@ def imfill(im_in):
     temp = np.zeros((h+2, w+2), np.uint8)
     temp[1:h+1, 1:w+1] = im_in
     mask = np.zeros((h+4, w+4), np.uint8)
-    cv2.floodFill(temp, mask, (0, 0), 255, cv2.FLOODFILL_FIXED_RANGE)
+    cv2.floodFill(temp, mask, (0, 0), 255, cv2.FLOODFILL_FIXED_RANGE) # type: ignore
     im_floodfill_inv = ~temp[1:h+1, 1:w+1]
     return (im_floodfill_inv > 1)*1
 
