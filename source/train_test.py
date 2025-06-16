@@ -4,11 +4,13 @@ import os
 import time
 import data
 import torch
+import skimage
 import numpy as np
 import skimage.io as io
 
 import model
 import Config
+import metrics
 import transform
 from utils import *
 
@@ -48,7 +50,7 @@ class test_model(object):
             ground_truth.append(torch.squeeze(mask))
             file_.append(file)
 
-        evaluation(nuclei_pre, ground_truth, self.conf.cutoff)
+        self.evaluation(nuclei_pre, ground_truth, self.conf.cutoff)
 
     def predition(self, img, HE, file):
         with torch.no_grad():
@@ -64,6 +66,35 @@ class test_model(object):
                 len(file)-4)]+'-H.png'), np.array(H*255, dtype='uint8'))
 
         return nuclei, H, RGB
+    
+    def evaluation(self, pre, mask, cutoff, min_size=10) -> None:
+        TP: list[float] = []
+        PQ: list[float] = []
+        IOU: list[float] = []
+        AJI: list[float] = []
+        DICE: list[float] = []
+
+        for i in range(len(pre)):
+            img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
+            
+            PQ.append(metrics.get_fast_pq(np.array(mask[i], dtype='uint8'), np.array(img, dtype='uint8'))[0][2])
+
+            IOU.append(metrics.compute_iou(img, mask[i], cutoff))
+
+            # Dice -> compute_F1
+            DICE.append(metrics.compute_F1(img, mask[i], cutoff))
+
+            AJI.append(metrics.get_fast_aji(mask[i], img))
+
+            TP.append(metrics.compute_TP_ratio(img, mask[i], cutoff))
+
+        self.TP_ = float(np.mean(TP))
+        self.PQ_ = float(np.mean(PQ))
+        self.IOU_ = float(np.mean(IOU))
+        self.AJI_ = float(np.mean(AJI))
+        self.DICE_ = float(np.mean(DICE))
+        my_print('Num is:{} '.format(len(PQ)), 'cutoff=[{}]'.format(cutoff), 'PQ=[{:.6}]'.format(self.PQ_), 'IOU=[{:.6}]'.format(self.IOU_),
+                'DICE=[{:.6}]'.format(self.DICE_), 'AJI=[{:.6}]'.format(self.AJI_), 'TP=[{:.6}]'.format(self.TP_))
 
 
 class train_model(object):
@@ -154,7 +185,8 @@ class train_model(object):
     def epoch_dice(self) -> tuple[float, float]:
         DICE: list[float] = []
         with torch.no_grad():
-            for data_loader in (self.train_loader, self.valid_loader):
+            for data_loader, amount_of_img in ((self.train_loader, len(self.train_data_Generator)), 
+                                               (self.valid_loader, len(self.valid_Generator))):
                 i: int = 0
                 nuclei_list = []
                 ground_truth_list = []
@@ -162,7 +194,7 @@ class train_model(object):
                     H = H.cuda()
                     img = img.cuda()
                     i = i + img.size()[0]
-                    rtime_print('{}/{}'.format(i, len(data_loader)))
+                    rtime_print('{}/{}'.format(i, amount_of_img))
                     
                     nuclei, _, _ = self.net(img, H)
                     nuclei = torch.squeeze(nuclei.cpu())
@@ -170,7 +202,7 @@ class train_model(object):
                     nuclei_list.append(nuclei)
                     ground_truth_list.append(torch.squeeze(ground_truth.cpu()))
                     
-                DICE.append(dice_evaluation(nuclei_list, ground_truth_list, self.conf.cutoff))
+                DICE.append(self.dice_evaluation(nuclei_list, ground_truth_list, self.conf.cutoff))
 
         return (DICE[0], DICE[1])
 
@@ -208,7 +240,7 @@ class train_model(object):
                 no_improve_epochs += 1
 
             if no_improve_epochs >= patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs (patience: {patience}). Best validation loss: {best_val_loss:.4f}.\n")
+                print(f"Early stopping triggered after {epoch + 1} epochs (patience: {patience}). Best validation loss: {best_val_loss:.5f}.\n")
                 self.net.load_state_dict(best_model_state)
                 break
 
@@ -217,7 +249,7 @@ class train_model(object):
             history["train_loss"].append(train_loss)
             history['train_dice'].append(train_dice)
             wandb.log({"train_loss": train_loss, "train_dice": train_dice, "val_loss": val_loss, "val_dice": val_dice})
-            my_print('Epoch{} Train Loss:{:.4} Validation Loss:{:.4} Train DICE:[{:.4}] Validation DICE:[{:.4}]  cost time:{:.4}'.format(
+            my_print('Epoch{} Train Loss:{:.5} Validation Loss:{:.5} Train DICE:[{:.5}] Validation DICE:[{:.5}]  cost time:{:.5}'.format(
                 epoch+1, train_loss, val_loss, train_dice, val_dice, str(end-start)))
 
         torch.save(self.net.state_dict(), self.conf.model_path.format(self.conf.epoches))
@@ -225,3 +257,13 @@ class train_model(object):
 
         history_plot(history)
         wandb.finish()
+        
+    def dice_evaluation(self, pre, mask, cutoff, min_size=10) -> float:
+        DICE: list[float] = []
+        for i in range(len(pre)):
+            img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
+
+            # Dice -> compute_F1
+            DICE.append(metrics.compute_F1(img, mask[i], cutoff))
+
+        return float(np.mean(DICE))
