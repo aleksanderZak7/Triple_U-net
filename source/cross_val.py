@@ -126,14 +126,7 @@ class CrossValidation:
 
         del all_masks
         del all_images
-        train_imgs, val_imgs, train_masks, val_masks = train_test_split(
-            imgs, masks, test_size=self._val_size, random_state=self._random_seed)
-
-        self._prepare_cropped_data(zip(val_imgs, val_masks), data_type="val")
-
-        del val_imgs
-        del val_masks
-        self._prepare_cropped_data(zip(train_imgs, train_masks), data_type="train", pad=True)
+        self._prepare_cropped_data(zip(imgs, masks))
 
     def _read_images_and_masks(self, train_data: zip) -> tuple[list[np.ndarray], list[np.ndarray]]:
         masks: list[np.ndarray] = []
@@ -168,7 +161,7 @@ class CrossValidation:
 
         return cropped_image, cropped_mask
 
-    def _shatter_image_and_mask(self, image: np.ndarray, mask: np.ndarray, pad: bool,
+    def _shatter_image_and_mask(self, image: np.ndarray, mask: np.ndarray, pad: bool = False,
                                 target_size: tuple[int, int] = (60, 60)) -> tuple[list[np.ndarray], list[np.ndarray]]:
         h: int = image.shape[0]
         w: int = image.shape[1]
@@ -197,26 +190,34 @@ class CrossValidation:
 
         return result_images, result_masks
 
-    def _save_shattered_data(self, images: list[np.ndarray], masks: list[np.ndarray], data_type: str) -> None:
+    def _save_shattered_data(self, images: list[np.ndarray], masks: list[np.ndarray]) -> None:
+        
+        train_imgs, val_imgs, train_masks, val_masks = train_test_split(
+            images, masks, test_size=self._val_size, random_state=self._random_seed)
+        
+        my_print(f"Training images: {len(train_imgs)}, Total masks: {len(train_masks)}")
+        my_print(f"Validation images: {len(val_imgs)}, Validation masks: {len(val_masks)}")
+        
         masks_dir = Path(self._conf.label_path)
-        target_dir: Path = Path(self._conf.train_data_path) if data_type == "train" else Path(
-            self._conf.valid_data_path)
+        
+        for data_type, images, masks in zip(["train", "val"], [train_imgs, val_imgs], [train_masks, val_masks]):
+            target_dir: Path = Path(self._conf.train_data_path) if data_type == "train" else Path(self._conf.valid_data_path)
 
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
-        target_dir.mkdir(parents=True)
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            target_dir.mkdir(parents=True)
 
-        for i, (image_np, mask_np) in enumerate(zip(images, masks)):
-            img_pil = Image.fromarray(image_np, 'RGB')
-            mask_pil = Image.fromarray(mask_np * 255, 'L')
+            for i, (image_np, mask_np) in enumerate(zip(images, masks)):
+                img_pil = Image.fromarray(image_np, 'RGB')
+                mask_pil = Image.fromarray(mask_np * 255, 'L')
 
-            file_name = f"{data_type}_item_{i:05d}.png"
-            img_pil.save(target_dir / file_name)
-            mask_pil.save(masks_dir / file_name)
+                file_name = f"{data_type}_item_{i:05d}.png"
+                img_pil.save(target_dir / file_name)
+                mask_pil.save(masks_dir / file_name)
 
-            rtime_print(f"Saved {i + 1}/{len(images)} images")
+                rtime_print(f"Saved {i + 1}/{len(images)} images")
 
-    def _prepare_cropped_data(self, img_paths: zip, data_type: str, pad: bool = False) -> None:
+    def _prepare_cropped_data(self, img_paths: zip) -> None:
         images, masks = self._read_images_and_masks(img_paths)
 
         del img_paths
@@ -224,16 +225,14 @@ class CrossValidation:
         cropped_images: list[np.ndarray] = []
 
         for image, mask in zip(images, masks):
-            cropped_image, cropped_mask = self._crop_image_to_masked_region(
-                image, mask)
+            cropped_image, cropped_mask = self._crop_image_to_masked_region(image, mask)
             cropped_images.append(cropped_image)
             cropped_masks.append(cropped_mask)
 
         masks: list[np.ndarray] = []
         images: list[np.ndarray] = []
         for image, mask in zip(cropped_images, cropped_masks):
-            shattered_images, shattered_masks = self._shatter_image_and_mask(
-                image, mask, pad)
+            shattered_images, shattered_masks = self._shatter_image_and_mask(image, mask)
             images.extend(shattered_images)
             masks.extend(shattered_masks)
 
@@ -241,11 +240,10 @@ class CrossValidation:
         del cropped_images
         total_masks: int = len(masks)
         total_images: int = len(images)
-        my_print(
-            f"Total {data_type} images: {total_images}, Total masks: {total_masks}")
+        my_print(f"Total images: {total_images}, Total masks: {total_masks}")
         assert total_masks == total_images, "Mismatch between number of images and masks after shattering."
 
-        self._save_shattered_data(images, masks, data_type)
+        self._save_shattered_data(images, masks)
 
     def _generate_edge_mask(self, mask_image, thickness=1) -> np.ndarray:
         binary_mask = np.uint8(mask_image > 0) * 255
