@@ -4,8 +4,6 @@ import csv
 import time
 import torch
 import random
-import metrics
-import skimage
 import numpy as np
 import skimage.morphology as sm
 from matplotlib import pyplot as plt
@@ -29,42 +27,6 @@ def create_lr_scheduler(conf, optimizer) -> torch.optim.lr_scheduler.Exponential
     lr_scheduler = conf.lr_scheduler
     gamma = lr_scheduler['gamma']
     return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma, last_epoch=-1)
-
-
-def evaluation(pre, mask, cutoff, min_size=10) -> None:
-    IOU: list[float] = []
-    DICE: list[float] = []
-    AJI: list[float] = []
-    TP: list[float] = []
-    PQ: list[float] = []
-
-    for i in range(len(pre)):
-        img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
-        
-        PQ.append(metrics.get_fast_pq(np.array(mask[i], dtype='uint8'), np.array(img, dtype='uint8'))[0][2])
-
-        IOU.append(metrics.compute_iou(img, mask[i], cutoff))
-
-        # Dice -> compute_F1
-        DICE.append(metrics.compute_F1(img, mask[i], cutoff))
-
-        AJI.append(metrics.get_fast_aji(mask[i], img))
-
-        TP.append(metrics.compute_TP_ratio(img, mask[i], cutoff))
-
-    my_print('Num is:{} '.format(len(PQ)), 'cutoff=[{}]'.format(cutoff), 'PQ=[{:.6}]'.format(np.mean(PQ)), 'IOU=[{:.6}]'.format(np.mean(IOU)),
-             'DICE=[{:.6}]'.format(np.mean(DICE)), 'AJI=[{:.6}]'.format(np.mean(AJI)), 'TP=[{:.6}]'.format(np.mean(TP)))
-
-
-def dice_evaluation(pre, mask, cutoff, min_size=10) -> float:
-    DICE: list[float] = []
-    for i in range(len(pre)):
-        img = skimage.morphology.remove_small_objects(np.array(pre[i]) > cutoff, min_size=min_size)
-
-        # Dice -> compute_F1
-        DICE.append(metrics.compute_F1(img, mask[i], cutoff))
-
-    return float(np.mean(DICE))
 
 
 def history_plot(training_history: dict[str, list[float]]) -> None:
