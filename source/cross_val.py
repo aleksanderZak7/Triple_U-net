@@ -1,22 +1,32 @@
-import random
+import cv2
 import shutil
 import numpy as np
 from PIL import Image
+import skimage.io as io
 from pathlib import Path
 from sklearn.model_selection import KFold, train_test_split
 
 import Config
-from train_test import train_model
 from utils import my_print, rtime_print
+from train_test import train_model, test_model
 
 
 class CrossValidation:
+    
+    __slots__ = ("_cv", "_conf", "_random_seed", "_val_size", "_fold_dir",
+                 "TP_", "PQ_", "IOU_", "AJI_", "DICE_")
+
     def __init__(self, cv: int, conf: Config.config, validation_size: float = 0.1, random_seed: int = 42) -> None:
+        if cv < 2:
+            raise ValueError("Cross-validation requires at least 2 folds.")
+        if not (0 < validation_size < 1):
+            raise ValueError("Validation size must be between 0 and 1.")
+
         self._cv = cv
         self._conf = conf
         self._random_seed = random_seed
         self._val_size = validation_size
-        self._temp_dir = Path(self._conf.input_dir) / "temp"
+        self._fold_dir = Path(self._conf.input_dir) / "folds"
 
         self.TP_: list[float] = []
         self.PQ_: list[float] = []
@@ -26,10 +36,41 @@ class CrossValidation:
 
         self._prepare_folds()
 
+    def __del__(self) -> None:
+        self.cleanup()
+
     def __str__(self) -> str:
         return (f"CrossValidation(cv={self._cv}, estimations:"
                 f"\nTP: {self.TP_},\nPQ: {self.PQ_},\nIOU: {self.IOU_},"
                 f"\nAJI: {self.AJI_},\nDICE:{self.DICE_})")
+
+    def run(self) -> None:
+        for i in range(self._cv):
+            my_print(f"Cross-validation {i + 1}/{self._cv}")
+
+            test_fold = self._fold_dir / f"fold{i + 1}"
+            train_folds = [self._fold_dir / f"fold{j + 1}" for j in range(self._cv) if j != i]
+
+            self._test_data_preparation(test_fold)
+            self._train_val_data_preparation(train_folds)
+            self._prepare_and_save_edge_masks()
+
+            train = train_model(self._conf)
+            train.training()
+
+            del train
+            test = test_model(self._conf)
+            test.test()
+
+            self.TP_.append(test.TP_)
+            self.PQ_.append(test.PQ_)
+            self.IOU_.append(test.IOU_)
+            self.AJI_.append(test.AJI_)
+            self.DICE_.append(test.DICE_)
+
+    def cleanup(self) -> None:
+        if self._fold_dir.exists():
+            shutil.rmtree(self._fold_dir)
 
     def _prepare_folds(self) -> None:
         mask_dir = Path(self._conf.input_dir) / "Masks"
@@ -40,17 +81,14 @@ class CrossValidation:
         assert len(all_images) == len(all_masks), "Mismatch between images and masks count"
 
         data = list(zip(all_images, all_masks))
-        random.seed(self._random_seed)
-        random.shuffle(data)
+        kf = KFold(n_splits=self._cv, shuffle=True, random_state=self._random_seed)
 
-        kf = KFold(n_splits=self._cv, shuffle=False)
-        base_folds = Path(self._conf.input_dir) / "folds"
-        if base_folds.exists():
-            shutil.rmtree(base_folds)
-        base_folds.mkdir(parents=True)
+        if self._fold_dir.exists():
+            shutil.rmtree(self._fold_dir)
+        self._fold_dir.mkdir(parents=True)
 
         for fold_idx, (_, test_idx) in enumerate(kf.split(data)):  # type: ignore
-            fold_path = base_folds / f"fold{fold_idx + 1}"
+            fold_path = self._fold_dir / f"fold{fold_idx + 1}"
             (fold_path / "Original").mkdir(parents=True, exist_ok=True)
             (fold_path / "Masks").mkdir(parents=True, exist_ok=True)
 
@@ -59,46 +97,26 @@ class CrossValidation:
                 shutil.copy(img_path, fold_path / "Original" / img_path.name)
                 shutil.copy(mask_path, fold_path / "Masks" / mask_path.name)
 
-    def run(self) -> None:
-        base_folds = Path(self._conf.input_dir) / "folds"
-        for i in range(self._cv):
-            my_print(f"Cross-validation {i + 1}/{self._cv}")
-
-            test_fold = base_folds / f"fold{i + 1}"
-            train_folds = [base_folds /
-                           f"fold{j + 1}" for j in range(self._cv) if j != i]
-
-            self.test_data_split(test_fold)
-            self.train_val_data_split(train_folds)
-            
-            self._prepare_training_data() #TODO: change loading data from temp dir
-
-            train = train_model(self._conf)
-            train.training()
-
-    def test_data_split(self, test_fold: Path) -> None:
+    def _test_data_preparation(self, test_fold: Path) -> None:
         test_mask: Path = test_fold / "Masks"
         test_img: Path = test_fold / "Original"
 
         test_dir = Path(self._conf.test_data_path)
         label_dir = Path(self._conf.label_path)
-        
+
         for path in (test_dir, label_dir):
             if path.exists():
                 shutil.rmtree(path)
             path.mkdir(parents=True)
-
-        test_dir.mkdir(parents=True)
-        label_dir.mkdir(parents=True)
 
         for img_path in test_img.glob('*'):
             shutil.copy(img_path, test_dir / img_path.name)
         for mask_path in test_mask.glob('*'):
             shutil.copy(mask_path, label_dir / mask_path.name)
 
-    def train_val_data_split(self, train_folds: list[Path]) -> None:
-        all_images = []
-        all_masks = []
+    def _train_val_data_preparation(self, train_folds: list[Path]) -> None:
+        all_masks: list[Path] = []
+        all_images: list[Path] = []
         for fold in train_folds:
             all_images.extend(sorted((fold / "Original").glob('*')))
             all_masks.extend(sorted((fold / "Masks").glob('*')))
@@ -106,59 +124,38 @@ class CrossValidation:
         data = sorted(zip(all_images, all_masks), key=lambda x: x[0].name)
         imgs, masks = zip(*data)
 
+        del all_masks
+        del all_images
         train_imgs, val_imgs, train_masks, val_masks = train_test_split(
             imgs, masks, test_size=self._val_size, random_state=self._random_seed)
 
-        label_dir = Path(self._conf.label_path)
-        valid_dir = Path(self._conf.valid_data_path)
-        valid_dir.mkdir(parents=True, exist_ok=True)
-        
-        temp_img_dir: Path = self._temp_dir / "train"
-        temp_masks_dir: Path = self._temp_dir / "masks"
-        temp_img_dir.mkdir(parents=True, exist_ok=True)
-        temp_masks_dir.mkdir(parents=True, exist_ok=True)
-        
-        for path in (valid_dir, temp_img_dir, temp_masks_dir):
-            if path.exists():
-                shutil.rmtree(path)
-            path.mkdir(parents=True)
+        self._prepare_cropped_data(zip(val_imgs, val_masks), data_type="val")
 
-        for img, mask in zip(val_imgs, val_masks):
-            shutil.copy(img, valid_dir / img.name)
-            shutil.copy(mask, label_dir / mask.name)
+        del val_imgs
+        del val_masks
+        self._prepare_cropped_data(zip(train_imgs, train_masks), data_type="train", pad=True)
 
-        for img, mask in zip(train_imgs, train_masks):
-            shutil.copy(img, temp_img_dir / img.name)
-            shutil.copy(mask, temp_masks_dir / mask.name)
-        
-    def _read_images_and_masks(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def _read_images_and_masks(self, train_data: zip) -> tuple[list[np.ndarray], list[np.ndarray]]:
         masks: list[np.ndarray] = []
         images: list[np.ndarray] = []
 
-        temp_masks_dir: Path = self._temp_dir / "masks"
-        images_directory: Path = self._temp_dir / "train"
-        img_list: list[Path] = sorted([p for p in images_directory.glob('*.png')])
-
-        for image_path in img_list:
+        for image_path, mask_path in train_data:
             image: Image.Image = Image.open(image_path).convert('RGB')
-            mask_path: Path = temp_masks_dir / image_path.name
-
-            mask: Image.Image = Image.open(mask_path).convert('L')
             image_np: np.ndarray = np.asarray(image, dtype=np.uint8)
 
+            mask: Image.Image = Image.open(mask_path).convert('L')
             mask_np: np.ndarray = np.asarray(mask, dtype=np.uint8)
             mask_np = (mask_np >= 127).astype(np.uint8)  # Binarize the mask
 
-            images.append(image_np)
             masks.append(mask_np)
-        
-        shutil.rmtree(self._temp_dir)
+            images.append(image_np)
+
         return images, masks
-    
+
     def _crop_image_to_masked_region(self, image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         ys, xs = np.nonzero(mask)
         if len(ys) == 0 or len(xs) == 0:
-                return image, mask
+            return image, mask
 
         top: int = ys.min()
         bottom: int = ys.max()
@@ -171,8 +168,8 @@ class CrossValidation:
 
         return cropped_image, cropped_mask
 
-    def _shatter_image_and_mask(self, image: np.ndarray, mask: np.ndarray, 
-                               target_size: tuple[int, int] = (60, 60), pad: bool = True) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def _shatter_image_and_mask(self, image: np.ndarray, mask: np.ndarray, pad: bool,
+                                target_size: tuple[int, int] = (60, 60)) -> tuple[list[np.ndarray], list[np.ndarray]]:
         h: int = image.shape[0]
         w: int = image.shape[1]
         th, tw = target_size
@@ -199,43 +196,84 @@ class CrossValidation:
                 result_masks.append(mask[y:y+th, x:x+tw])
 
         return result_images, result_masks
-    
-    def _save_shattered_data(self, images: list[np.ndarray], masks: list[np.ndarray]) -> None:
+
+    def _save_shattered_data(self, images: list[np.ndarray], masks: list[np.ndarray], data_type: str) -> None:
         masks_dir = Path(self._conf.label_path)
-        image_dir = Path(self._conf.train_data_path)
-        image_dir.mkdir(parents=True, exist_ok=True)
-        
+        target_dir: Path = Path(self._conf.train_data_path) if data_type == "train" else Path(
+            self._conf.valid_data_path)
+
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        target_dir.mkdir(parents=True)
+
         for i, (image_np, mask_np) in enumerate(zip(images, masks)):
             img_pil = Image.fromarray(image_np, 'RGB')
             mask_pil = Image.fromarray(mask_np * 255, 'L')
-            
-            file_name = f"train_item_{i:05d}.png"
-            img_pil.save(image_dir / file_name)
+
+            file_name = f"{data_type}_item_{i:05d}.png"
+            img_pil.save(target_dir / file_name)
             mask_pil.save(masks_dir / file_name)
-            
+
             rtime_print(f"Saved {i + 1}/{len(images)} images")
 
-    def _prepare_training_data(self) -> None:
-        images, masks = self._read_images_and_masks()
-        
+    def _prepare_cropped_data(self, img_paths: zip, data_type: str, pad: bool = False) -> None:
+        images, masks = self._read_images_and_masks(img_paths)
+
+        del img_paths
         cropped_masks: list[np.ndarray] = []
         cropped_images: list[np.ndarray] = []
-        
+
         for image, mask in zip(images, masks):
-            cropped_image, cropped_mask = self._crop_image_to_masked_region(image, mask)
+            cropped_image, cropped_mask = self._crop_image_to_masked_region(
+                image, mask)
             cropped_images.append(cropped_image)
             cropped_masks.append(cropped_mask)
-        
+
         masks: list[np.ndarray] = []
         images: list[np.ndarray] = []
         for image, mask in zip(cropped_images, cropped_masks):
-            shattered_images, shattered_masks = self._shatter_image_and_mask(image, mask)
+            shattered_images, shattered_masks = self._shatter_image_and_mask(
+                image, mask, pad)
             images.extend(shattered_images)
             masks.extend(shattered_masks)
 
+        del cropped_masks
+        del cropped_images
         total_masks: int = len(masks)
         total_images: int = len(images)
-        my_print(f"Total training images: {total_images}, Total masks: {total_masks}")
+        my_print(
+            f"Total {data_type} images: {total_images}, Total masks: {total_masks}")
         assert total_masks == total_images, "Mismatch between number of images and masks after shattering."
-        
-        self._save_shattered_data(images, masks)
+
+        self._save_shattered_data(images, masks, data_type)
+
+    def _generate_edge_mask(self, mask_image, thickness=1) -> np.ndarray:
+        binary_mask = np.uint8(mask_image > 0) * 255
+
+        if np.count_nonzero(binary_mask) == 0:
+            return np.zeros_like(binary_mask, dtype=np.float32)
+
+        contours, _ = cv2.findContours(
+            binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        edge_mask = np.zeros_like(binary_mask, dtype=np.float32)
+        cv2.drawContours(edge_mask, contours, -1, (1,), thickness)
+
+        return edge_mask
+
+    def _prepare_and_save_edge_masks(self) -> None:
+        label_dir: Path = Path(self._conf.label_path)
+        edge_mask_dir: Path = Path(self._conf.edg_path)
+
+        if edge_mask_dir.exists():
+            shutil.rmtree(edge_mask_dir)
+        edge_mask_dir.mkdir(parents=True)
+
+        amount_of_masks: int = len(list(label_dir.glob('*')))
+        for i, mask_path_obj in enumerate(label_dir.glob('*')):
+            full_mask = io.imread(str(mask_path_obj))
+            edge_mask = self._generate_edge_mask(full_mask, thickness=1)
+
+            target_edge_path = edge_mask_dir / mask_path_obj.name
+            cv2.imwrite(str(target_edge_path), np.ascontiguousarray(np.uint8(edge_mask * 255)))
+
+            rtime_print(f"{i + 1}/{amount_of_masks} edge masks generated.")
