@@ -10,7 +10,7 @@ from train_test import train_model, test_model
 if __name__ == "__main__":
     epoches: int = 100
     train: bool = True
-    cross_val: bool = False
+    cross_val: bool = True
 
     conf = Config.config()
     conf.train = train
@@ -25,10 +25,10 @@ if __name__ == "__main__":
         my_print('epoches num:      {}'.format(conf.epoches))
 
         if cross_val:
-            scores = CrossValidation(cv=4, conf=conf)
+            scores = CrossValidation(cv=5, conf=conf)
             scores.run()
-            
             scores.cleanup()
+            
             my_print(scores)
             my_print(f"DICE mean: {np.mean(scores.DICE_):.4f}\nDICE std: {np.std(scores.DICE_):.4f}")
         else:

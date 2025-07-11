@@ -7,8 +7,8 @@ from pathlib import Path
 from sklearn.model_selection import KFold, train_test_split
 
 import Config
-from utils import my_print, rtime_print
 from train_test import train_model, test_model
+from utils import my_print, rtime_print, get_time
 
 
 class CrossValidation:
@@ -45,6 +45,10 @@ class CrossValidation:
                 f"\nAJI: {self.AJI_},\nDICE:{self.DICE_})")
 
     def run(self) -> None:
+        now: str = get_time(complete=True).replace(':', '-').replace(' ', '_')
+        plot_dir: Path = Path(self._conf.save_path) / f"train_plots_{now}"
+        plot_dir.mkdir(parents=True, exist_ok=True)
+            
         for i in range(self._cv):
             my_print(f"Cross-validation {i + 1}/{self._cv}")
 
@@ -55,7 +59,7 @@ class CrossValidation:
             self._train_val_data_preparation(train_folds)
             self._prepare_and_save_edge_masks()
 
-            train = train_model(self._conf)
+            train = train_model(self._conf, str(plot_dir / f"train_plot{i + 1}.png"))
             train.training()
 
             del train
