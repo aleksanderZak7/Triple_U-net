@@ -15,13 +15,13 @@ MID_output_channel = 1
 
 
 class unet_up_sample(nn.Module):
-    def __init__(self, inplanes, planes):
+    def __init__(self, inplanes, planes) -> None:
         super(unet_up_sample, self).__init__()
         self.up     = up_sample(inplanes, planes)
         self.cat    = my_conv(planes * 2, planes, kernel_size=1, padding=0, bias=False)
         self.block  = unet_block(planes, planes)
 
-    def forward(self, up, skip):
+    def forward(self, up, skip) -> torch.Tensor:
         up = self.up(up)
 
         if up.size()[2:] != skip.size()[2:]:
@@ -33,40 +33,40 @@ class unet_up_sample(nn.Module):
 
 
 class unet_block(nn.Module):
-    def __init__(self,input_size,output_size):
+    def __init__(self,input_size,output_size) -> None:
         super(unet_block,self).__init__()
         self.block1 = my_conv(input_size,output_size,kernel_size=3,stride=1, padding=1,bias=False)           
         self.block2 = my_conv(output_size,output_size,kernel_size=3,stride=1, padding=1,bias=False)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         x = self.block1(x)
         x = self.block2(x)
         return x
 
 class up_sample(nn.Module):
-    def __init__(self,in_planes, out_planes, stride=1,kernel_size=1, padding=0, up_rate=2):
+    def __init__(self,in_planes, out_planes, stride=1,kernel_size=1, padding=0, up_rate=2) -> None:
         super(up_sample, self).__init__()
         self.up_rate    = up_rate
         self.out        = my_conv(in_planes, out_planes, stride=1,kernel_size=1, padding=0)
-    def forward(self,x):
+    def forward(self,x) -> torch.Tensor:
         return self.out(F.interpolate(x, \
                 size=(x.size()[-2]*self.up_rate,x.size()[-1]*self.up_rate),\
                 mode='bilinear', align_corners=True))
 
 class down_sample(nn.Module):
-    def __init__(self,in_planes, out_planes, stride=2,kernel_size=1, padding=0):
+    def __init__(self,in_planes, out_planes, stride=2,kernel_size=1, padding=0) -> None:
         super(down_sample, self).__init__()
         self.down_sample = nn.Sequential(my_conv(in_planes, out_planes, kernel_size=kernel_size,
                         stride=stride,padding=padding),
                         my_conv(out_planes, out_planes, kernel_size=1,
                         stride=1,padding=0))
-    def forward(self,x):
+    def forward(self,x) -> torch.Tensor:
         return self.down_sample(x)
 
 
 class unet_down_branch(nn.Module):
 #The down sample branch of RGB branch and H branch
-    def __init__(self,input_channels):
+    def __init__(self,input_channels) -> None:
         super(unet_down_branch, self).__init__()
         
         self.unetdown1      = unet_block(input_channels, channels_[0])
@@ -81,7 +81,7 @@ class unet_down_branch(nn.Module):
         self.unetdown4      = unet_block(channels_[2], channels_[3])
 
 
-    def forward(self, x): 
+    def forward(self, x) -> list[torch.Tensor]: 
         ret1 = self.unetdown1(x)
         
         ret2 = self.down_sample1(ret1)
@@ -98,7 +98,7 @@ class unet_down_branch(nn.Module):
 
 class unet_up_branch(nn.Module):
 #The up sample branch of RGB branch and H branch
-    def __init__(self,output_channel=1):
+    def __init__(self,output_channel=1) -> None:
         super(unet_up_branch,self).__init__()       
  
         self.up64   = unet_up_sample(channels_[3],channels_[2])
@@ -106,7 +106,7 @@ class unet_up_branch(nn.Module):
         self.up256  = unet_up_sample(channels_[1],channels_[0])
         
         self.out    = nn.Conv2d(channels_[0],MID_output_channel,kernel_size=1,stride=1, bias=False)
-    def forward(self,down_features):
+    def forward(self,down_features) -> tuple[list[torch.Tensor], torch.Tensor]:
         ret1 = self.up64(down_features[3],down_features[2])
 
         ret2 = self.up128(ret1,down_features[1])
@@ -118,18 +118,18 @@ class unet_up_branch(nn.Module):
 
 
 class my_conv(nn.Module):
-    def __init__(self,inplanes, outplanes,kernel_size=3,stride=1,  padding=1,bias=False):
+    def __init__(self,inplanes, outplanes,kernel_size=3,stride=1,  padding=1,bias=False) -> None:
         super(my_conv, self).__init__()
         self.my_conv = nn.Sequential(nn.Conv2d(inplanes, outplanes,kernel_size=kernel_size,\
                         stride=stride,  padding=padding,bias=False),
                         nn.BatchNorm2d(outplanes),
                         nn.ReLU(inplace=True))
-    def forward(self,x):
+    def forward(self,x) -> torch.Tensor:
         return self.my_conv(x)
    
         
 class PDFA(nn.Module):
-    def __init__(self,outplanes,fuse_num=4):
+    def __init__(self,outplanes,fuse_num=4) -> None:
     #outplanes denote the output channels of PDFA; fuse_num denote the components of feature to fuse
         super(PDFA, self).__init__()
         self.fuse_num   = fuse_num
@@ -142,7 +142,7 @@ class PDFA(nn.Module):
         self.out = nn.Sequential(my_conv(outplanes,outplanes),
                                    my_conv(outplanes,outplanes)) 
                                    
-    def forward(self,features):
+    def forward(self,features) -> nn.Sequential | None :
     #the input features,a list,with the same channels
     #example:features = [up_sample_feature or down_sample_feature,RGB,H,skip(only in the upsample)]
     #up_sample_feature or down_sample_feature of the previous block is in the first index of features (features[0])
@@ -164,7 +164,7 @@ class PDFA(nn.Module):
 
 class segmentation_branch_down(nn.Module):
 #segmentation branch for down sample of the Triple U-net
-    def __init__(self):
+    def __init__(self) -> None:
         super(segmentation_branch_down, self).__init__()
         self.down_conv = []
         for i in range(down_times):
@@ -177,7 +177,7 @@ class segmentation_branch_down(nn.Module):
         self.PDFA3  = PDFA(channels_[2],fuse_num=3)
         self.PDFA4  = PDFA(channels_[3],fuse_num=3)
         
-    def forward(self,features_h,features_rgb):
+    def forward(self,features_h,features_rgb) -> list[torch.Tensor]:
     #features_h : is a list of H branch feature with different resolution
     #features_rgb :is a list of RGB branch feature with different resolution
         ret1   = [features_h[0],features_rgb[0]]
@@ -198,7 +198,7 @@ class segmentation_branch_down(nn.Module):
 
 class segmentation_branch_up(nn.Module):
 #segmentation branch for up sample of the Triple U-net
-    def __init__(self,conf=None):
+    def __init__(self,conf=None) -> None:
         super(segmentation_branch_up, self).__init__()
         self.up_sample = []
         for i in range(down_times):#channels:128to64,256to128,512to256
@@ -211,7 +211,7 @@ class segmentation_branch_up(nn.Module):
         self.PDFA64  = PDFA(channels_[2],fuse_num=4)
 
         self.out     = nn.Conv2d(channels_[0],MID_output_channel,kernel_size=1,stride=1, bias=False)
-    def forward(self,features_H,features_rgb,mid_features):
+    def forward(self,features_H,features_rgb,mid_features) -> torch.Tensor:
         ret    = []
 
         output = [self.up_sample[2](F.interpolate(mid_features[3], size=features_H[0].size()[2:])),mid_features[2],features_H[0],features_rgb[0]]
@@ -230,7 +230,7 @@ class segmentation_branch_up(nn.Module):
 
 
 class net(nn.Module):
-    def __init__(self,init=True):
+    def __init__(self,init=True) -> None:
         super(net, self).__init__()
         self.H_branch_down      = unet_down_branch(H_input_channels)
         self.H_branch_up        = unet_up_branch(H_output_channel)
@@ -241,7 +241,7 @@ class net(nn.Module):
         self.mid_down_block     = segmentation_branch_down()
         self.mid_branch_up      = segmentation_branch_up()
 
-    def forward(self, rgb,H):
+    def forward(self, rgb,H) -> tuple[torch.Tensor, ...]:
         H_down_features             = self.H_branch_down(H)
         rgb_down_features           = self.rgb_branch_down(rgb)
         
@@ -250,5 +250,5 @@ class net(nn.Module):
         rgb_up_features,rgb_output  = self.rgb_branch_up(rgb_down_features)
         
         nuclei                      = self.mid_branch_up(H_up_features,rgb_up_features,mid_down_features)
-        return nuclei,H_output,rgb_output
+        return nuclei, H_output, rgb_output
   

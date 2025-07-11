@@ -1,18 +1,18 @@
-import numpy as np
-from numpy import random
 import cv2
-import torchvision.transforms as transforms
-from PIL import Image
-import skimage
 import torch
+import skimage
+import numpy as np
+from PIL import Image
+from numpy import random
+import torchvision.transforms as transforms
 from scipy.ndimage import map_coordinates, gaussian_filter
 
 
 class Compose(object):
-    def __init__(self, transforms):
+    def __init__(self, transforms) -> None:
         self.transforms = transforms
 
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[torch.Tensor | torch.FloatTensor, ...]:
         for t in self.transforms:
             img, mask, HE, edge = t(img, mask, HE, edge)
 
@@ -29,7 +29,7 @@ class ColorJitter(object):
         return np.array(img), skimage.io.imread(mask_path)
 
 
-def ConvertImgFloat(img, mask, HE, edge):
+def ConvertImgFloat(img, mask, HE, edge) -> tuple[torch.Tensor | torch.FloatTensor, ...]:
     if HE is None or HE.ndim != 3 or HE.shape[2] != 3:
         raise ValueError(f"Invalid HE shape: {HE.shape}")  # (64, 64, 3, 3)!
 
@@ -46,7 +46,7 @@ def ConvertImgFloat(img, mask, HE, edge):
 
 
 class elastic_transform(object):
-    def __call__(self, image, mask, HE, edge, alpha=120):
+    def __call__(self, image, mask, HE, edge, alpha=120) -> tuple:
         if random.randint(2):
             return image, mask, HE, edge
         random_state = np.random.RandomState(None)
@@ -82,7 +82,7 @@ class elastic_transform(object):
 
 
 class RandomSampleCrop(object):
-    def __init__(self, min_win=0.4):
+    def __init__(self, min_win=0.4) -> None:
         self.sample_options = (
             # using entire original input image
             None,
@@ -97,7 +97,7 @@ class RandomSampleCrop(object):
 
         self.min_win = min_win
 
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[torch.FloatTensor, ...]:
         if random.randint(2):
             return img, mask, HE, edge
 
@@ -132,7 +132,7 @@ class RandomSampleCrop(object):
 
 
 class RandomMirror_w(object):
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[torch.FloatTensor, ...]:
         if random.randint(2):
             return img, mask, HE, edge
 
@@ -144,7 +144,7 @@ class RandomMirror_w(object):
 
 
 class RandomMirror_h(object):
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[torch.FloatTensor, ...]:
         if random.randint(2):
             return img, mask, HE, edge
 
@@ -156,10 +156,10 @@ class RandomMirror_h(object):
 
 
 class rotation(object):
-    def __init__(self):
+    def __init__(self) -> None:
         self.angle = (90, 180, 270)
 
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[cv2.typing.MatLike, ...]:
         if random.randint(2):
             return img, mask, HE, edge
 
@@ -177,10 +177,10 @@ class rotation(object):
 
 
 class flip(object):
-    def __init__(self):
+    def __init__(self) -> None:
         self.direction = (0, 1, -1)
 
-    def __call__(self, img, mask, HE, edge):
+    def __call__(self, img, mask, HE, edge) -> tuple[torch.FloatTensor, ...]:
         if random.randint(2):
             return img, mask, HE, edge
 

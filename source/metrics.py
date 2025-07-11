@@ -112,8 +112,8 @@ def get_dice_2(true, pred) -> float:
 
 
 def get_fast_aji(true, pred) -> float:
-    true = label(true, background=0).astype(np.uint8)
-    pred = label(pred, background=0).astype(np.uint8)
+    true = label(true, background=0).astype(np.uint8) # type: ignore
+    pred = label(pred, background=0).astype(np.uint8) # type: ignore
     true_id_list = list(np.unique(true))
     pred_id_list = list(np.unique(pred))
 
@@ -178,8 +178,8 @@ def get_fast_pq(true, pred, match_iou: float = 0.5):
     assert match_iou >= 0.0
     true = label(true, background=0)
     pred = label(pred, background=0)
-    true_id_list = list(np.unique(true))
-    pred_id_list = list(np.unique(pred))
+    true_id_list = list(np.unique(true)) # type: ignore
+    pred_id_list = list(np.unique(pred)) # type: ignore
 
     true_masks = [None] + [(true == t).astype(np.uint8)
                            for t in true_id_list[1:]]
@@ -191,7 +191,7 @@ def get_fast_pq(true, pred, match_iou: float = 0.5):
 
     for t_idx, true_id in enumerate(true_id_list[1:]):
         t_mask = true_masks[true_id]
-        overlap_pred_ids = np.unique(pred[t_mask > 0])
+        overlap_pred_ids = np.unique(pred[t_mask > 0]) # type: ignore
         for pred_id in overlap_pred_ids:
             if pred_id == 0:
                 continue

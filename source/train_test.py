@@ -1,13 +1,13 @@
-import wandb    # !
+#import wandb
 
 import os
 import time
-import data
 import torch
 import skimage
 import numpy as np
 import skimage.io as io
 
+import data
 import model
 import Config
 import metrics
@@ -16,16 +16,16 @@ from utils import *
 
 
 class test_model(object):
-    def __init__(self, conf: Config.config):
+    def __init__(self, conf: Config.config) -> None:
         super(test_model, self).__init__()
         self.conf = conf
-        self.datagen = data.trainGenerator(conf.test_data_path, conf.label_path, conf.edg_path)
+        self.datagen = data.DataGenerator(conf.test_data_path, conf.label_path, conf.edg_path)
         
         self.net = model.net()
-        self.net.load_state_dict(torch.load(conf.model_path))
+        self.net.load_state_dict(torch.load(conf.model_path, weights_only=True))
         self.net = self.net.cuda()
 
-    def test(self):
+    def test(self) -> None:
         rgb_pre = []
         file_ = []
         HE_pre = []
@@ -52,7 +52,7 @@ class test_model(object):
 
         self.evaluation(nuclei_pre, ground_truth, self.conf.cutoff)
 
-    def predition(self, img, HE, file):
+    def predition(self, img, HE, file) -> tuple[torch.Tensor, ...]:
         with torch.no_grad():
             nuclei, H, RGB = self.net(img, HE)
             nuclei = torch.squeeze(nuclei.cpu())
@@ -98,10 +98,11 @@ class test_model(object):
 
 
 class train_model(object):
-    def __init__(self, conf):
+    def __init__(self, conf: Config.config, train_plot_path: str | None = None) -> None:
         super(train_model, self).__init__()
         self.conf = conf
         self.net = model.net().cuda()
+        self._train_plot_path = train_plot_path
 
         self.optimizer = create_optimizer(conf, self.net)
         self.scheduler = create_lr_scheduler(conf, self.optimizer)
@@ -112,7 +113,7 @@ class train_model(object):
                                             transform.flip(),
                                             transform.elastic_transform()])
 
-        self.train_data_Generator = data.trainGenerator(
+        self.train_data_Generator = data.DataGenerator(
             self.conf.train_data_path, self.conf.label_path, self.conf.edg_path, data_transform)
         
         self.train_loader = torch.utils.data.DataLoader(
@@ -123,7 +124,7 @@ class train_model(object):
             collate_fn=data.collater)
 
         ####################################
-        self.valid_Generator = data.trainGenerator(
+        self.valid_Generator = data.DataGenerator(
             self.conf.valid_data_path, self.conf.label_path, self.conf.edg_path, data_transform)
         
         self.valid_loader = torch.utils.data.DataLoader(
@@ -207,14 +208,14 @@ class train_model(object):
         return (DICE[0], DICE[1])
 
 
-    def training(self):
-        wandb.init(project="segmentation", config={
-            "epochs": self.conf.epoches,
-            "batch_size": self.conf.batch_size,
-            "learning_rate": self.conf.optim_conf['learning_rate'],
-            "weight_decay": self.conf.optim_conf['weight_decay'],
-            "cutoff": self.conf.cutoff,
-        })
+    def training(self) -> None:
+        #wandb.init(project="segmentation", config={
+            #"epochs": self.conf.epoches,
+            #"batch_size": self.conf.batch_size,
+            #"learning_rate": self.conf.optim_conf['learning_rate'],
+            #"weight_decay": self.conf.optim_conf['weight_decay'],
+            #"cutoff": self.conf.cutoff,
+        #})
         patience: int = 5
         no_improve_epochs: int = 0
         best_val_loss: float = float('inf')
@@ -248,15 +249,15 @@ class train_model(object):
             history['val_dice'].append(val_dice)
             history["train_loss"].append(train_loss)
             history['train_dice'].append(train_dice)
-            wandb.log({"train_loss": train_loss, "train_dice": train_dice, "val_loss": val_loss, "val_dice": val_dice})
+            #wandb.log({"train_loss": train_loss, "train_dice": train_dice, "val_loss": val_loss, "val_dice": val_dice})
             my_print('Epoch{} Train Loss:{:.5} Validation Loss:{:.5} Train DICE:[{:.5}] Validation DICE:[{:.5}]  cost time:{:.5}'.format(
                 epoch+1, train_loss, val_loss, train_dice, val_dice, str(end-start)))
 
         torch.save(self.net.state_dict(), self.conf.model_path.format(self.conf.epoches))
         rtime_print('Save AJI model', end='\n')
 
-        history_plot(history)
-        wandb.finish()
+        history_plot(history, self._train_plot_path)
+        #wandb.finish()
         
     def dice_evaluation(self, pre, mask, cutoff, min_size=10) -> float:
         DICE: list[float] = []

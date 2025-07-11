@@ -29,7 +29,7 @@ def create_lr_scheduler(conf, optimizer) -> torch.optim.lr_scheduler.Exponential
     return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma, last_epoch=-1)
 
 
-def history_plot(training_history: dict[str, list[float]]) -> None:
+def history_plot(training_history: dict[str, list[float]], save_path: str | None = None) -> None:
     plt.figure(figsize=(12, 4))
     metrics: tuple[str, str] = ("loss", "dice")
 
@@ -43,22 +43,25 @@ def history_plot(training_history: dict[str, list[float]]) -> None:
         plt.legend()
 
     plt.tight_layout()
-    plt.show()
+    if save_path: 
+        plt.savefig(save_path)
+        my_print(f"Plot saved to {save_path}")
+    else: 
+        plt.show()
 
-
-def rtime_print(str, end='\r'):
+def rtime_print(str, end='\r') -> None:
     print('\033[5;{};40m{}\033[0m'.format(
         random.randint(31, 37), str), end=end, flush=True)
 
 
-def note_by_split(num, split):
+def note_by_split(num, split) -> None:
     if num == 0:
         return
     if num % split == 0:
         my_print('handling :{}'.format(num))
 
 
-def get_filename(path, contain_dir=False, abspath=False, num_only=False, no_num=False):
+def get_filename(path, contain_dir=False, abspath=False, num_only=False, no_num=False) -> tuple[list[str], int] | list[str] | int:
     if not os.path.exists(path):
         my_error('{} not exit!!!'.format(path))
         return []
@@ -81,13 +84,13 @@ def get_filename(path, contain_dir=False, abspath=False, num_only=False, no_num=
     return ret, num
 
 
-def get_time(complete=False):
+def get_time(complete=False) -> str:
     if not complete:
         return time.strftime("%Y-%m-%d", time.localtime(time.time()))
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
 
 
-def write_csv(content, filename, ifini=0):
+def write_csv(content, filename, ifini=0) -> None:
     if ifini:
         with open(filename, 'w+')as f:
             f_csv = csv.writer(f)
@@ -140,7 +143,7 @@ def separate_stain(im: np.ndarray) -> np.ndarray:
     return np.uint8(image_out) # type: ignore
 
 
-def com_str(str, rc=True, sep=' ', last=False):
+def com_str(str, rc=True, sep=' ', last=False) -> str:
     global last_color
     if rc:
         if last:
@@ -152,7 +155,7 @@ def com_str(str, rc=True, sep=' ', last=False):
         return '\033[1;36m{}{}\033[0m'.format(str, sep)
 
 
-def my_print(*args, rc=True, sep=' ', if_last=False):
+def my_print(*args, rc=True, sep=' ', if_last=False) -> None:
     for i in range(len(args)-1):
         if i == 0:
             print(com_str(args[i], rc, '', last=if_last), end='')
@@ -161,17 +164,17 @@ def my_print(*args, rc=True, sep=' ', if_last=False):
     print(com_str(args[len(args)-1], rc, sep, last=if_last))
 
 
-def my_error(str):
+def my_error(str) -> None:
     print('\033[1;31m{}\033[0m'.format(str))
 
 
-def adjustData(img, mask):
+def adjustData(img, mask) -> tuple[np.ndarray, np.ndarray]:
     img = img / 255
     mask = (mask > 200)*1
     return (img, mask)
 
 
-def get_attention(img):
+def get_attention(img) -> np.ndarray:
     sep = separate_stain(img)
     sep = np.reshape((sep[:, :, 0] < 230), [
                      np.shape(img)[0], np.shape(img)[1]])
@@ -183,7 +186,7 @@ def get_attention(img):
     return sep
 
 
-def my_load(model, hdf5):
+def my_load(model, hdf5) -> dict[str, torch.Tensor]:
     ret = {}
     if isinstance(hdf5, str):
         ud = torch.load(hdf5)
@@ -197,7 +200,7 @@ def my_load(model, hdf5):
     return ret
 
 
-def imfill(im_in):
+def imfill(im_in) -> np.ndarray:
     if im_in.ndim != 2:
         my_error('Only handle Binary but get image dim:{}!'.format(im_in.ndim))
         return im_in
@@ -215,7 +218,7 @@ def imfill(im_in):
     return (im_floodfill_inv > 1)*1
 
 
-def _fuse_kernel(kernel, gamma, std):
+def _fuse_kernel(kernel, gamma, std) -> torch.Tensor:
     b_gamma = torch.reshape(gamma, (kernel.shape[0], 1, 1, 1))
     b_gamma = b_gamma.repeat(
         1, kernel.shape[1], kernel.shape[2], kernel.shape[3])
@@ -224,7 +227,7 @@ def _fuse_kernel(kernel, gamma, std):
     return kernel * b_gamma / b_std
 
 
-def _add_to_square_kernel(square_kernel, asym_kernel):
+def _add_to_square_kernel(square_kernel, asym_kernel) -> None:
     asym_h = asym_kernel.shape[2]
     asym_w = asym_kernel.shape[3]
     square_h = square_kernel.shape[2]
@@ -233,7 +236,7 @@ def _add_to_square_kernel(square_kernel, asym_kernel):
                   square_w // 2 - asym_w // 2: square_w // 2 - asym_w // 2 + asym_w] += asym_kernel
 
 
-def convert_acnet_weights(hdf5, eps=1e-5):
+def convert_acnet_weights(hdf5, eps=1e-5) -> dict[str, torch.Tensor]:
     train_dict = torch.load(hdf5)
 
     deploy_dict = {}
@@ -292,7 +295,7 @@ def convert_acnet_weights(hdf5, eps=1e-5):
     return deploy_dict
 
 
-def convert_no_norm_acnet_weights(hdf5, eps=1e-5):
+def convert_no_norm_acnet_weights(hdf5, eps=1e-5) -> dict[str, torch.Tensor]:
     train_dict = torch.load(hdf5)
 
     deploy_dict = {}

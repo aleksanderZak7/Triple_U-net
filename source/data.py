@@ -8,8 +8,8 @@ import torch.nn as nn
 from torch.utils.data.dataset import Dataset
 
 
-class trainGenerator(Dataset):
-    def __init__(self, data_dir, label_dir,edge_dir, transform=None):
+class DataGenerator(Dataset):
+    def __init__(self, data_dir, label_dir,edge_dir, transform=None) -> None:
         super(Dataset, self).__init__()
         self.data_dir   =   data_dir
         self.label_dir  =   label_dir
@@ -19,12 +19,12 @@ class trainGenerator(Dataset):
         self.error_name =   True
         self.right_name =   False
         
-    def just_img_name(self, img_id):
+    def just_img_name(self, img_id) -> bool:
         if img_id.find('pre') >= 0 or img_id.find('sep') >= 0 or img_id.find('mask') >= 0:
             return self.error_name
         return self.right_name    
         
-    def load_image(self, index, norm=True, no_transpose=False):
+    def load_image(self, index, norm=True, no_transpose=False) -> tuple[torch.FloatTensor, str]:
         img_id  = self.img_ids[index]
         if self.just_img_name(img_id):
             return torch.FloatTensor([]), img_id
@@ -36,7 +36,7 @@ class trainGenerator(Dataset):
             return torch.FloatTensor(np.transpose(img, (2,0,1)) / 255), img_id
         return torch.FloatTensor(np.transpose(img, (2,0,1))), img_id
         
-    def load_mask(self, index,no_tensor=False):
+    def load_mask(self, index,no_tensor=False) -> torch.FloatTensor:
         mask_ids    = self.img_ids[index]
         imgFile     = os.path.join(self.label_dir, mask_ids)
         mask        = skimage.io.imread(imgFile)
@@ -46,7 +46,7 @@ class trainGenerator(Dataset):
         return torch.FloatTensor(mask > 0)
 
         
-    def load_edge(self, index, no_tensor=False):
+    def load_edge(self, index, no_tensor=False) -> torch.FloatTensor:
         feat_ids    = self.img_ids[index]
         
         imgFile     = os.path.join(self.edge_dir, feat_ids)
@@ -56,7 +56,7 @@ class trainGenerator(Dataset):
             return mask
         return torch.FloatTensor(mask>0)
         
-    def load_HE(self, index, no_transpose=False):
+    def load_HE(self, index, no_transpose=False) -> torch.FloatTensor | np.ndarray:
         img_id  = self.img_ids[index]
         if self.just_img_name(img_id):
             return torch.FloatTensor([])
@@ -73,7 +73,7 @@ class trainGenerator(Dataset):
         output = torch.FloatTensor(np.transpose(HE, (2, 0, 1))/255)
         return output
         
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> tuple[torch.FloatTensor, torch.FloatTensor | np.ndarray, torch.FloatTensor, torch.FloatTensor]:
         img, _     = self.load_image(item, no_transpose=True)
         masks    = self.load_mask(item, no_tensor=True)
         edge    = self.load_edge(item, no_tensor=True)
@@ -84,16 +84,16 @@ class trainGenerator(Dataset):
         
         return img, HE, masks, edge
         
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.img_ids)
         
-def save_output(save_path,img,name):
+def save_output(save_path,img,name) -> None:
     batch=img.size()[0]
     for i in range(batch):
         imgFile = os.path.join(save_path, name[i])
         cv2.imwrite(imgFile,np.array(img[i,:,:].cpu().detach().numpy())*255)
         
-def collater(data):
+def collater(data) -> tuple[torch.Tensor, ...]:
     HE = []
     img = []
     edge = []
@@ -112,7 +112,7 @@ def collater(data):
 
     return img, HE, masks, edge
 
-def seg_loss(prediction, ground_truth):
+def seg_loss(prediction, ground_truth) -> torch.Tensor:
     ground_truth = torch.squeeze(ground_truth.cpu()).view(-1) 
     prediction = torch.squeeze(prediction.cpu()).view(-1)
 
@@ -136,7 +136,7 @@ def soft_dice(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return loss
     
 
-def soft_truncate_ce_loss(pre,label, delta=0.2):
+def soft_truncate_ce_loss(pre,label, delta=0.2) -> torch.Tensor:
     smooth = 1e-5
     pre = torch.squeeze(pre.cpu())
     label = torch.squeeze(label.cpu())
@@ -148,28 +148,28 @@ def soft_truncate_ce_loss(pre,label, delta=0.2):
     condition = torch.le(ret,np.log(delta))
     return torch.mean(torch.where(condition, smooth_truncate,-ret))
     
-def IOU_loss(pre,label, batch_size):
+def IOU_loss(pre,label, batch_size) -> torch.Tensor:
     dim=(1, 2)
     pre = torch.squeeze(pre.cpu())
     label = torch.squeeze(label.cpu())
     intersection = pre * label
     union = pre + label -intersection
     IoU = torch.sum(intersection,dim)/torch.sum(union,dim)
-    return (1-torch.mean(IoU))/batch_size
+    return (1 - torch.mean(IoU)) / batch_size
 
-def FP_loss(pre, label):
+def FP_loss(pre, label) -> torch.Tensor:
     smooth = 1e-5
     pre = torch.squeeze(pre.cpu())
     label = torch.squeeze(label.cpu())
     
-    label = 1-label
-    return torch.mean(label*torch.log(1-pre+smooth))
+    label = 1 - label
+    return torch.mean(label * torch.log(1 - pre + smooth))
     
 class LossVariance(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super(LossVariance, self).__init__()
         
-    def forward(self, input, target):
+    def forward(self, input, target) -> torch.Tensor:
         B = input.size(0)
 
         loss = 0
