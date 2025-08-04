@@ -15,10 +15,11 @@ class TestModel(object):
         super(TestModel, self).__init__()
         self.conf = conf
         self.datagen = DataGenerator(conf.test_data_path)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         self.net = model.net()
-        self.net = torch.load(conf.model_path, weights_only=False)
-        self.net = self.net.cuda()
+        self.net = torch.load(conf.model_path, map_location=self.device)
+        self.net = self.net.to(self.device)
 
 
     def test(self) -> None:
@@ -27,8 +28,8 @@ class TestModel(object):
             img, file, HE = self.datagen[index]
             
             # HE channel hematoxylin-eosin staining
-            img = torch.unsqueeze(img.cuda(), 0)
-            HE = torch.unsqueeze(HE.cuda(), 0)  # type: ignore
+            img = torch.unsqueeze(img.to(self.device), 0)
+            HE = torch.unsqueeze(HE.to(self.device), 0)  # type: ignore
 
             pred = self.predition(img, HE)
             io.imsave(os.path.join(self.conf.save_path, file), pred)

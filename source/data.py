@@ -1,7 +1,8 @@
 import os
 import torch
 import skimage
-import numpy as np 
+import numpy as np
+from typing import Tuple
 from utils import separate_stain
 from torch.utils.data.dataset import Dataset
 
@@ -13,7 +14,7 @@ class DataGenerator(Dataset):
         self.img_ids = sorted(os.listdir(self.data_dir))  
         
         
-    def load_image(self, index) -> tuple[torch.FloatTensor, str]:
+    def load_image(self, index) -> Tuple[torch.FloatTensor, str]:
         img_id = self.img_ids[index]
         imgFile = os.path.join(self.data_dir, img_id)
         
@@ -33,7 +34,7 @@ class DataGenerator(Dataset):
         return output
         
         
-    def __getitem__(self, item) -> tuple[torch.FloatTensor, str, torch.FloatTensor]:
+    def __getitem__(self, item) -> Tuple[torch.FloatTensor, str, torch.FloatTensor]:
         img, id = self.load_image(item)
         HE = self.load_HE(item)
         

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import List, Tuple, Optional
 
 from utils import *
 
@@ -89,7 +90,7 @@ class unet_down_branch(nn.Module):
         self.unetdown4      = unet_block(channels_[2], channels_[3])
 
 
-    def forward(self, x) -> list[torch.Tensor]: 
+    def forward(self, x) -> List[torch.Tensor]: 
         ret1 = self.unetdown1(x)
         
         ret2 = self.down_sample1(ret1)
@@ -116,7 +117,7 @@ class unet_up_branch(nn.Module):
         self.out    = nn.Conv2d(channels_[0],MID_output_channel,kernel_size=1,stride=1, bias=False)
         
         
-    def forward(self,down_features) -> tuple[list[torch.Tensor], torch.Tensor]:
+    def forward(self,down_features) -> Tuple[List[torch.Tensor], torch.Tensor]:
         ret1 = self.up64(down_features[3],down_features[2])
 
         ret2 = self.up128(ret1,down_features[1])
@@ -153,8 +154,8 @@ class PDFA(nn.Module):
                                    my_conv(outplanes,outplanes)) 
                  
                                    
-    def forward(self,features) -> nn.Sequential | None :
-    #the input features,a list,with the same channels
+    def forward(self,features) -> Optional[nn.Sequential] :
+    #the input features,a List,with the same channels
     #example:features = [up_sample_feature or down_sample_feature,RGB,H,skip(only in the upsample)]
     #up_sample_feature or down_sample_feature of the previous block is in the first index of features (features[0])
     #the order of the remaining features is arbitrary , as discussed in the paper in the Table 4
@@ -189,9 +190,9 @@ class segmentation_branch_down(nn.Module):
         self.PDFA4  = PDFA(channels_[3],fuse_num=3)
         
         
-    def forward(self,features_h,features_rgb) -> list[torch.Tensor]:
-    #features_h : is a list of H branch feature with different resolution
-    #features_rgb :is a list of RGB branch feature with different resolution
+    def forward(self,features_h,features_rgb) -> List[torch.Tensor]:
+    #features_h : is a List of H branch feature with different resolution
+    #features_rgb :is a List of RGB branch feature with different resolution
         ret1   = [features_h[0],features_rgb[0]]
         ret1 = self.PDFA1(ret1)
         
@@ -256,7 +257,7 @@ class net(nn.Module):
         self.mid_branch_up      = segmentation_branch_up()
 
 
-    def forward(self, rgb,H) -> tuple[torch.Tensor, ...]:
+    def forward(self, rgb,H) -> Tuple[torch.Tensor, ...]:
         H_down_features             = self.H_branch_down(H)
         rgb_down_features           = self.rgb_branch_down(rgb)
         
