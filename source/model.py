@@ -4,13 +4,13 @@ import torch.nn.functional as F
 
 from utils import *
 
-channels_ = [64,128,256,512]
-block_config=(4,8,16,12)
+channels_ = [64, 128, 256, 512]
+block_config=(4, 8, 16, 12)
 down_times = 3
-RGB_input_channels = 3
-RGB_output_channel = 1
 H_input_channels = 3
 H_output_channel = 1
+RGB_input_channels = 3
+RGB_output_channel = 1
 MID_output_channel = 1
 
 
@@ -20,6 +20,7 @@ class unet_up_sample(nn.Module):
         self.up     = up_sample(inplanes, planes)
         self.cat    = my_conv(planes * 2, planes, kernel_size=1, padding=0, bias=False)
         self.block  = unet_block(planes, planes)
+
 
     def forward(self, up, skip) -> torch.Tensor:
         up = self.up(up)
@@ -38,20 +39,25 @@ class unet_block(nn.Module):
         self.block1 = my_conv(input_size,output_size,kernel_size=3,stride=1, padding=1,bias=False)           
         self.block2 = my_conv(output_size,output_size,kernel_size=3,stride=1, padding=1,bias=False)
 
+
     def forward(self, x) -> torch.Tensor:
         x = self.block1(x)
         x = self.block2(x)
         return x
+
 
 class up_sample(nn.Module):
     def __init__(self,in_planes, out_planes, stride=1,kernel_size=1, padding=0, up_rate=2) -> None:
         super(up_sample, self).__init__()
         self.up_rate    = up_rate
         self.out        = my_conv(in_planes, out_planes, stride=1,kernel_size=1, padding=0)
+        
+        
     def forward(self,x) -> torch.Tensor:
         return self.out(F.interpolate(x, \
                 size=(x.size()[-2]*self.up_rate,x.size()[-1]*self.up_rate),\
                 mode='bilinear', align_corners=True))
+
 
 class down_sample(nn.Module):
     def __init__(self,in_planes, out_planes, stride=2,kernel_size=1, padding=0) -> None:
@@ -60,6 +66,8 @@ class down_sample(nn.Module):
                         stride=stride,padding=padding),
                         my_conv(out_planes, out_planes, kernel_size=1,
                         stride=1,padding=0))
+        
+        
     def forward(self,x) -> torch.Tensor:
         return self.down_sample(x)
 
@@ -106,6 +114,8 @@ class unet_up_branch(nn.Module):
         self.up256  = unet_up_sample(channels_[1],channels_[0])
         
         self.out    = nn.Conv2d(channels_[0],MID_output_channel,kernel_size=1,stride=1, bias=False)
+        
+        
     def forward(self,down_features) -> tuple[list[torch.Tensor], torch.Tensor]:
         ret1 = self.up64(down_features[3],down_features[2])
 
@@ -141,6 +151,7 @@ class PDFA(nn.Module):
         
         self.out = nn.Sequential(my_conv(outplanes,outplanes),
                                    my_conv(outplanes,outplanes)) 
+                 
                                    
     def forward(self,features) -> nn.Sequential | None :
     #the input features,a list,with the same channels
@@ -177,6 +188,7 @@ class segmentation_branch_down(nn.Module):
         self.PDFA3  = PDFA(channels_[2],fuse_num=3)
         self.PDFA4  = PDFA(channels_[3],fuse_num=3)
         
+        
     def forward(self,features_h,features_rgb) -> list[torch.Tensor]:
     #features_h : is a list of H branch feature with different resolution
     #features_rgb :is a list of RGB branch feature with different resolution
@@ -211,6 +223,8 @@ class segmentation_branch_up(nn.Module):
         self.PDFA64  = PDFA(channels_[2],fuse_num=4)
 
         self.out     = nn.Conv2d(channels_[0],MID_output_channel,kernel_size=1,stride=1, bias=False)
+        
+        
     def forward(self,features_H,features_rgb,mid_features) -> torch.Tensor:
         ret    = []
 
@@ -240,6 +254,7 @@ class net(nn.Module):
 
         self.mid_down_block     = segmentation_branch_down()
         self.mid_branch_up      = segmentation_branch_up()
+
 
     def forward(self, rgb,H) -> tuple[torch.Tensor, ...]:
         H_down_features             = self.H_branch_down(H)
