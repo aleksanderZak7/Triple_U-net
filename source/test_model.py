@@ -1,12 +1,13 @@
 import os
 import cv2
+import time
 import torch
 import numpy as np
 import skimage.io as io
 
 import model
 import Config
-from utils import rtime_print
+from utils import my_print
 from data import DataGenerator
 
 
@@ -23,8 +24,11 @@ class TestModel(object):
 
 
     def test(self) -> None:
+        start = time.time()
         for index in range(len(self.datagen)):
-            rtime_print('{}/{}'.format(index + 1, len(self.datagen)))
+            if (index + 1) % 100 == 0:
+                my_print('Processed {}/{} images in {} seconds...'.format(index + 1, len(self.datagen), time.time() - start))
+                
             img, file, HE = self.datagen[index]
             
             # HE channel hematoxylin-eosin staining

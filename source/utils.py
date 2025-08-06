@@ -4,11 +4,6 @@ import numpy as np
 last_color = 31
 
 
-def rtime_print(str, end='\r') -> None:
-    print('\033[5;{};40m{}\033[0m'.format(
-        random.randint(31, 37), str), end=end, flush=True)
-
-
 def separate_stain(im: np.ndarray) -> np.ndarray:
     if im is None or im.ndim != 3 or im.shape[2] != 3:
         raise ValueError(
